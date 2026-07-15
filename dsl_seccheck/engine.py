@@ -14,7 +14,13 @@ Control-flow semantics inside a state body:
   action textually before it has already been applied. Receive bindings
   are included even though a firing timeout means the receive never
   completed; domains only ever *add* facts on receive (taint, unverified
-  fields), so the edge over-approximates and never hides a violation.
+  fields), so that inclusion over-approximates and cannot hide a
+  violation (a characterization test marks the resulting over-reporting
+  as intended). Known limitation, flagged for a future round: an action
+  between the receive and its timeout that *removes* a fact (e.g. an
+  assignment clearing a variable's taint) is also reflected on the edge,
+  although a fired timeout means it never ran; the exact semantics would
+  carry the fact as of the blocking receive itself.
 - ``verify``/``authenticate`` with an explicit ok target end the linear
   flow (both outcomes jump); with no ok target the success branch falls
   through to the next action.

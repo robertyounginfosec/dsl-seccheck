@@ -26,9 +26,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strict", action="store_true",
                     help="warnings (W*) also cause a nonzero exit")
     ap.add_argument("--budget", type=int, default=DEFAULT_BUDGET, metavar="N",
-                    help="max explored (state, fact) pairs per check "
-                         "(default %(default)s); exceeding it is an error, "
-                         "never a silent approximation")
+                    help="max explored (state, fact) pairs per domain run; "
+                         "three domain runs per file, so a file may cost up "
+                         "to three budgets (default %(default)s); exceeding "
+                         "the budget is an error, never a silent "
+                         "approximation")
     ns = ap.parse_args(argv)
 
     exit_code = 0

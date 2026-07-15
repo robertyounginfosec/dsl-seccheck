@@ -40,6 +40,12 @@ C1 and C3 are structural. C2, C4, C5, and C6 are path-sensitive and share
 one worklist engine, each carrying its own fact: a boolean for
 authentication, a set of variable names for taint and verification.
 
+One coupling is worth knowing: a `verify` with no failure transition
+leaves its failure path unmodeled by the engine, and downstream analysis
+proceeds under the success assumption. That is sound only because C3
+unconditionally reports every such verify first, so the checker never
+silently analyzes around a failure path it cannot see.
+
 ### Example: catching an injection (C6)
 
 ```
@@ -117,7 +123,10 @@ pytest
 
 The test suite asserts that every example produces exactly its expected
 result, plus targeted semantics tests (taint through aliasing, timeout
-edges carrying pre-receive facts, unreachable states staying quiet).
+edges carrying position facts, dead code invisible to engine and warnings
+alike, unreachable states staying quiet) and a differential check: an
+independent brute-force path enumerator must agree with the engine on
+every example spec.
 
 ## DSL reference
 
@@ -152,6 +161,11 @@ not instead of, SCA/DAST and code review.
 
 The project originated in an AI-assisted design process working from a
 human-directed specification.
+
+## Versioning
+
+Pre-1.0: changes that can alter a spec's findings bump the minor version;
+changes that cannot bump the patch version. See CHANGELOG.md.
 
 ## License
 

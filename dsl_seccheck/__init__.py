@@ -12,4 +12,4 @@ __all__ = [
     "AnalysisBudgetExceeded",
     "DEFAULT_BUDGET",
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
