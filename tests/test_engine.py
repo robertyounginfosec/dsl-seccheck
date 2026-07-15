@@ -25,7 +25,9 @@ def test_taint_propagates_through_chained_assignment() -> None:
     assert checks_of(text) == {"C6"}
 
 
-def test_sanitizing_assignment_clears_taint() -> None:
+def test_wrapper_assigned_is_not_durably_clean() -> None:
+    # FN-2: `b = sanitize(q)` must NOT launder q into a clean b; exec b is
+    # a C6. (Pre-0.4.0 the assignment produced a durable clean variable.)
     text = (
         "state Init:\n"
         "    receive m(q)\n"
@@ -33,6 +35,39 @@ def test_sanitizing_assignment_clears_taint() -> None:
         "    verify q fail -> Deny\n"
         "    b = sanitize(q)\n"
         "    exec b\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+    assert checks_of(text) == {"C6"}
+
+
+def test_wrapper_in_concatenation_exposes_taint() -> None:
+    # FN-2: a wrapper is neutralizing only as the whole sink argument; one
+    # term of a concatenation exposes the underlying tainted variable.
+    text = (
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    timeout -> Abort\n"
+        "    verify q fail -> Deny\n"
+        '    query "x" + param(q)\n'
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+    assert checks_of(text) == {"C6"}
+
+
+def test_lone_wrapper_still_neutralizes() -> None:
+    # The whole-argument case remains clean (guards against over-firing).
+    text = (
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    timeout -> Abort\n"
+        "    verify q fail -> Deny\n"
+        "    query param(q)\n"
         "    -> Done\n"
         "state Done: terminal\n"
         "state Deny: deny\n"

@@ -43,14 +43,25 @@ from dsl_seccheck.model import (
     Assign,
     Authenticate,
     Goto,
+    Param,
     Receive,
+    Sanitize,
     Send,
     Sink,
     Timeout,
     Verify,
-    bare_var_names,
     var_names,
 )
+
+
+# Independently reasoned C6 exposure rule (not imported from checks): a
+# param()/sanitize() wrapper cancels its variable only when it stands alone
+# as the sink argument. In any compound expression the wrapped name is
+# exposed like a bare one. (The kind-affinity refinement is added with FN-1.)
+def _oracle_exposed(expr) -> set:
+    if len(expr) == 1 and isinstance(expr[0], (Param, Sanitize)):
+        return set()
+    return set(var_names(expr))
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "differential"
@@ -146,7 +157,8 @@ def oracle_findings(spec) -> set[tuple[str, str, int]]:
                     secrets.add(a.target)
                 else:
                     secrets.discard(a.target)
-                if any(n in taint for n in bare_var_names(a.expr)):
+                # a wrapper on the RHS does not launder: use var_names
+                if any(n in taint for n in var_names(a.expr)):
                     taint.add(a.target)
                 else:
                     taint.discard(a.target)
@@ -154,7 +166,7 @@ def oracle_findings(spec) -> set[tuple[str, str, int]]:
             elif isinstance(a, Sink):
                 record_uses(a.expr, a.line)
                 record_disclosure(a.expr, a.line)
-                for n in bare_var_names(a.expr):
+                for n in _oracle_exposed(a.expr):
                     if n in taint:
                         found.add(("C6", st.name, a.line))
             elif isinstance(a, Timeout):
@@ -254,6 +266,10 @@ EXPECTED_FIXTURE_FINDINGS = {
     "timeout_b_multi_receive_first_present_second_absent.dsl": [("C6", "Both")],
     # (c) authed survives onto the edge -> trusted entry is fine, no findings
     "timeout_c_auth_survives_onto_edge.dsl": [],
+    # FN-2: a wrapper inside a concatenation exposes its variable
+    "fn2_wrapper_in_concatenation.dsl": [("C6", "Init")],
+    # FN-2: a wrapper assigned to a variable is not durably clean
+    "fn2_wrapper_assigned_not_durable.dsl": [("C6", "Init")],
 }
 
 

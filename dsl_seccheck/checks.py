@@ -18,14 +18,15 @@ from .model import (
     Assign,
     Authenticate,
     Expr,
+    Param,
     Receive,
+    Sanitize,
     Send,
     Sink,
     Spec,
     State,
     Timeout,
     Verify,
-    bare_var_names,
     edge_targets,
     live_actions,
     var_names,
@@ -36,6 +37,19 @@ SINK_LABEL = {
     "exec": "OS command injection",
     "render": "cross-site scripting",
 }
+
+
+def _c6_exposed(expr: Expr) -> set[str]:
+    """Variable names whose taint reaches a sink fed *expr*.
+
+    A param()/sanitize() wrapper neutralizes its variable ONLY when it is
+    the entire sink argument; used as one term among several it exposes the
+    underlying name exactly as a bare variable would. (FN-1, in a later
+    change, further requires the wrapper's kind to match the sink.)
+    """
+    if len(expr) == 1 and isinstance(expr[0], (Param, Sanitize)):
+        return set()
+    return set(var_names(expr))
 
 
 def check_all(spec: Spec, budget: int = DEFAULT_BUDGET) -> list[Finding]:
@@ -374,19 +388,23 @@ class TaintDomain:
         return fact  # send is covered by C4, not by taint sinks
 
     def on_assign(self, a: Assign, fact, st: State, out):
-        if any(n in fact for n in bare_var_names(a.expr)):
+        # var_names (not bare_var_names): a param()/sanitize() wrapper on the
+        # RHS does NOT launder into a durable clean variable. The target
+        # takes the underlying variable's taint, so `y = param(x)` keeps y
+        # tainted. A wrapper only neutralizes as the whole argument of a
+        # matching sink (see on_sink), never by being assigned.
+        if any(n in fact for n in var_names(a.expr)):
             return fact | {a.target}
         return fact - {a.target}
 
     def on_sink(self, a: Sink, fact, st: State, out: list[Finding]):
-        for name in bare_var_names(a.expr):
-            if name in fact:
-                out.append(Finding(
-                    "C6", st.name, a.line,
-                    f"tainted value '{name}' reaches {a.kind} sink "
-                    f"({SINK_LABEL[a.kind]}): pass it via param() or clear "
-                    "it via sanitize()",
-                ))
+        for name in _c6_exposed(a.expr) & fact:
+            out.append(Finding(
+                "C6", st.name, a.line,
+                f"tainted value '{name}' reaches {a.kind} sink "
+                f"({SINK_LABEL[a.kind]}): a matching wrapper as the whole "
+                "sink argument is required to neutralize it",
+            ))
         return fact
 
     def on_verify_ok(self, a: Verify, fact):
