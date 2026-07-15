@@ -18,7 +18,6 @@ from .model import (
     Assign,
     Authenticate,
     Expr,
-    Goto,
     Receive,
     Send,
     Sink,
@@ -27,6 +26,8 @@ from .model import (
     Timeout,
     Verify,
     bare_var_names,
+    edge_targets,
+    live_actions,
     var_names,
 )
 
@@ -58,53 +59,28 @@ def warn_all(spec: Spec) -> list[Finding]:
     return sorted(set(warnings), key=lambda f: (f.line, f.check, f.message))
 
 
-def _flow_end_index(st: State) -> int | None:
-    """Index of the action that ends the state's linear flow, if any:
-    a goto, or a verify/authenticate whose both outcomes jump."""
-    for i, a in enumerate(st.actions):
-        if isinstance(a, Goto):
-            return i
-        if isinstance(a, (Verify, Authenticate)) and a.ok_target:
-            return i
-    return None
-
-
 # --- W1: actions after the linear flow has ended -------------------------------
 
 def warn_w1(spec: Spec) -> list[Finding]:
     out: list[Finding] = []
     for st in spec.states.values():
-        i = _flow_end_index(st)
-        if i is not None and i + 1 < len(st.actions):
+        live = live_actions(st)
+        if len(live) < len(st.actions):
             out.append(Finding(
-                "W1", st.name, st.actions[i + 1].line,
+                "W1", st.name, st.actions[len(live)].line,
                 f"action can never execute: the linear flow ends at "
-                f"line {st.actions[i].line}",
+                f"line {live[-1].line}",
             ))
     return out
 
 
 # --- W2: states unreachable from the initial state ------------------------------
 
-def _live_edges(st: State) -> list[str]:
-    """Transition targets reachable in execution order (edges declared
-    after the flow-end action can never be taken)."""
-    end = _flow_end_index(st)
-    live = st.actions if end is None else st.actions[:end + 1]
-    targets: list[str] = []
-    for a in live:
-        if isinstance(a, (Timeout, Goto)):
-            targets.append(a.target)
-        elif isinstance(a, (Verify, Authenticate)):
-            targets += [t for t in (a.ok_target, a.fail_target) if t]
-    return targets
-
-
 def warn_w2(spec: Spec) -> list[Finding]:
     reachable = {spec.initial}
     stack = [spec.initial]
     while stack:
-        for target in _live_edges(spec.states[stack.pop()]):
+        for target in edge_targets(spec.states[stack.pop()]):
             if target not in reachable:
                 reachable.add(target)
                 stack.append(target)

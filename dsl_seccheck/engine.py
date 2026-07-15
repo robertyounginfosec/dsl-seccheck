@@ -36,6 +36,7 @@ from .model import (
     State,
     Timeout,
     Verify,
+    live_actions,
 )
 
 
@@ -97,8 +98,11 @@ def run(spec: Spec, domain: Domain, budget: int = DEFAULT_BUDGET) -> list[Findin
         st = spec.states[name]
         domain.enter_state(st, entry, findings)
 
+        # live_actions (model.py) is the single definition of intra-state
+        # control flow: it stops at the flow-ending action, so no break
+        # logic is duplicated here.
         fact = entry
-        for a in st.actions:
+        for a in live_actions(st):
             if isinstance(a, Receive):
                 fact = domain.on_receive(a, fact, st, findings)
             elif isinstance(a, Send):
@@ -112,22 +116,27 @@ def run(spec: Spec, domain: Domain, budget: int = DEFAULT_BUDGET) -> list[Findin
             elif isinstance(a, Verify):
                 if a.fail_target:
                     edge(a.fail_target, domain.on_verify_fail(a, fact))
+                # A verify with no fail target emits no failure edge: the
+                # failure path is unmodeled, and downstream analysis
+                # proceeds under the success assumption. That is sound
+                # ONLY because C3 unconditionally reports every verify
+                # lacking a fail transition; C3 is load-bearing for the
+                # path-sensitive checks here.
                 ok_fact = domain.on_verify_ok(a, fact)
                 if a.ok_target:
                     edge(a.ok_target, ok_fact)
-                    break  # both outcomes jump; rest of body unreachable
-                fact = ok_fact
+                else:
+                    fact = ok_fact
             elif isinstance(a, Authenticate):
                 if a.fail_target:
                     edge(a.fail_target, domain.on_auth_fail(a, fact))
                 ok_fact = domain.on_auth_ok(a, fact)
                 if a.ok_target:
                     edge(a.ok_target, ok_fact)
-                    break
-                fact = ok_fact
+                else:
+                    fact = ok_fact
             elif isinstance(a, Goto):
                 edge(a.target, fact)
-                break
 
     # the same violation can be met under many facts; report it once
     return sorted(set(findings), key=lambda f: (f.line, f.check, f.message))

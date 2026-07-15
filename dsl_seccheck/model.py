@@ -149,3 +149,42 @@ class Spec:
     states: dict[str, State]
     secrets: dict[str, int]  # name -> declaration line
     initial: str
+
+
+# --- intra-state control flow --------------------------------------------------
+
+def flow_ends_at(a: Action) -> bool:
+    """True if *a* ends a state's linear flow: an unconditional goto, or a
+    verify/authenticate whose both outcomes jump."""
+    if isinstance(a, Goto):
+        return True
+    return isinstance(a, (Verify, Authenticate)) and a.ok_target is not None
+
+
+def live_actions(st: State) -> list[Action]:
+    """The actions of *st* that can actually execute, in order, stopping
+    at (and including) the flow-ending action.
+
+    This is the single definition of intra-state control flow. The
+    engine's action loop and the structural warnings (W1 dead actions,
+    W2 reachability) both consume it, so they cannot diverge on what is
+    live; a new flow-ending construct changes exactly one place.
+    """
+    out: list[Action] = []
+    for a in st.actions:
+        out.append(a)
+        if flow_ends_at(a):
+            break
+    return out
+
+
+def edge_targets(st: State) -> list[str]:
+    """Transition targets that can actually be taken from *st*, in
+    declaration order (edges declared after the flow end can never fire)."""
+    targets: list[str] = []
+    for a in live_actions(st):
+        if isinstance(a, (Timeout, Goto)):
+            targets.append(a.target)
+        elif isinstance(a, (Verify, Authenticate)):
+            targets.extend(t for t in (a.ok_target, a.fail_target) if t)
+    return targets

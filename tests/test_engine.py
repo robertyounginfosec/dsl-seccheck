@@ -152,6 +152,32 @@ def test_unreachable_violations_are_not_reported() -> None:
     assert checks_of(text) == set()
 
 
+def test_dead_code_is_invisible_to_both_engine_and_warnings() -> None:
+    # Divergence guard for the shared control-flow definition
+    # (model.live_actions). The dead `exec q` would be a C6 finding and
+    # the dead `-> Ghost` would make a trusted state reachable (C5) if
+    # the engine ever executed past the flow end; the dead goto would
+    # also hide the W2 if the warnings' edge collection ever included
+    # dead edges. If either consumer stops honoring the shared flow-end
+    # rule, one of these assertions trips.
+    text = (
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    timeout -> Abort\n"
+        "    verify q ok -> Done fail -> Deny\n"
+        "    exec q\n"
+        "    -> Ghost\n"
+        "state Ghost: trusted\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+    spec = parse(text)
+    assert {f.check for f in check_all(spec)} == set()
+    warns = {(f.check, f.state) for f in warn_all(spec)}
+    assert warns == {("W1", "Init"), ("W2", "Ghost")}
+
+
 def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
     # The goto after a both-target verify can never execute (W1), so the
     # state it names is unreachable (W2). Neither is a security finding.
