@@ -84,12 +84,29 @@ pip install -e .
 dsl-seccheck path/to/spec.dsl        # or: python -m dsl_seccheck spec.dsl
 ```
 
-Exit codes: `0` clean, `1` findings, `2` parse or read error. A bad file
-does not stop the remaining files; the highest code wins. Findings report
-the check ID, the state and line, and a one-line explanation.
+Exit codes: `0` clean, `1` findings, `2` parse, read, or analysis-budget
+error. A bad file does not stop the remaining files; the highest code
+wins. Findings report the check ID, the state and line, and a one-line
+explanation.
 
 The `examples/` directory contains a passing and a failing spec for each of
 the six checks; they double as the acceptance suite.
+
+## Warnings and the analysis budget
+
+Beyond the six checks, two structural warnings flag suspect spec shape:
+`W1`, an action that can never execute (the linear flow already ended at a
+goto or a both-target verify/authenticate), and `W2`, a state unreachable
+from the initial state. Warnings print like findings but do not affect the
+exit code unless `--strict` is passed: "passes the checker" keeps meaning
+the six security properties.
+
+The path-sensitive checks explore the finite (state, fact) space
+exhaustively, which is exponential in the worst case. Rather than silently
+approximating, the engine carries a budget (default 100000 explored pairs,
+tunable with `--budget N`): exceeding it aborts that file with exit code 2
+and a clear error. The checker either proves a property or tells you that
+it could not; it never quietly downgrades the guarantee.
 
 ## Tests
 

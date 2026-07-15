@@ -39,6 +39,18 @@ from .model import (
 )
 
 
+DEFAULT_BUDGET = 100_000
+
+
+class AnalysisBudgetExceeded(Exception):
+    """The (state, fact) exploration outgrew its budget.
+
+    The fact space is exponential in the worst case. Rather than silently
+    approximating (which would break the every-reachable-path guarantee),
+    the engine fails loudly and lets the caller report it.
+    """
+
+
 @dataclass(frozen=True)
 class Finding:
     check: str
@@ -62,7 +74,7 @@ class Domain(Protocol):
     def on_auth_fail(self, a: Authenticate, fact: Hashable) -> Hashable: ...
 
 
-def run(spec: Spec, domain: Domain) -> list[Finding]:
+def run(spec: Spec, domain: Domain, budget: int = DEFAULT_BUDGET) -> list[Finding]:
     findings: list[Finding] = []
     seen: set[tuple[str, Hashable]] = set()
     work: list[tuple[str, Hashable]] = [(spec.initial, domain.initial_fact())]
@@ -76,6 +88,12 @@ def run(spec: Spec, domain: Domain) -> list[Finding]:
         if (name, entry) in seen:
             continue
         seen.add((name, entry))
+        if len(seen) > budget:
+            raise AnalysisBudgetExceeded(
+                f"analysis exceeded {budget} explored (state, fact) pairs; "
+                "the spec's fact space is too large for exhaustive checking "
+                "(raise --budget, or simplify the spec)"
+            )
         st = spec.states[name]
         domain.enter_state(st, entry, findings)
 

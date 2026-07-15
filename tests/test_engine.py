@@ -1,5 +1,7 @@
 """Targeted semantics tests for the path-sensitive checks."""
-from dsl_seccheck import check_all, parse
+import pytest
+
+from dsl_seccheck import AnalysisBudgetExceeded, check_all, parse, warn_all
 
 
 def checks_of(text: str) -> set[str]:
@@ -148,6 +150,29 @@ def test_unreachable_violations_are_not_reported() -> None:
         "state Done: terminal\n"
     )
     assert checks_of(text) == set()
+
+
+def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
+    # The goto after a both-target verify can never execute (W1), so the
+    # state it names is unreachable (W2). Neither is a security finding.
+    text = (
+        "state Init:\n"
+        "    verify x ok -> Done fail -> Deny\n"
+        "    -> Orphan\n"
+        "state Orphan:\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+    )
+    spec = parse(text)
+    assert {f.check for f in check_all(spec)} == set()
+    warns = warn_all(spec)
+    assert {(f.check, f.state) for f in warns} == {("W1", "Init"), ("W2", "Orphan")}
+
+
+def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:
+    spec = parse("state A:\n    -> B\nstate B: terminal\n")
+    with pytest.raises(AnalysisBudgetExceeded):
+        check_all(spec, budget=1)
 
 
 def test_re_receive_re_taints_and_unverifies() -> None:
