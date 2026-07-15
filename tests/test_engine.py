@@ -195,6 +195,29 @@ def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
     assert {(f.check, f.state) for f in warns} == {("W1", "Init"), ("W2", "Orphan")}
 
 
+def test_timeout_taint_over_approximation_is_intended_over_reporting() -> None:
+    # KNOWN FALSE POSITIVE, kept by design. When the timeout fires, Init
+    # was still blocked at its receive, so q was never actually bound;
+    # the C6 on the timeout path over-reports. The timeout edge carries
+    # every fact as of its position (receive bindings included) because a
+    # security checker must over-report rather than under-report. If this
+    # test starts finding nothing, a "fix" has reintroduced the
+    # false-negative window that position-fact edges closed.
+    text = (
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    verify q fail -> Deny\n"
+        "    timeout -> UseQ\n"
+        "    -> Done\n"
+        "state UseQ:\n"
+        "    exec q\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+    )
+    assert checks_of(text) == {"C6"}
+
+
 def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:
     spec = parse("state A:\n    -> B\nstate B: terminal\n")
     with pytest.raises(AnalysisBudgetExceeded):
