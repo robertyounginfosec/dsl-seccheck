@@ -9,6 +9,52 @@ bumps the MINOR version. Changes that cannot alter any spec's findings
 version. Anyone gating CI on this tool's exit codes should pin to a minor
 version.
 
+## 0.4.0 - 2026-07-14
+
+Unpublished. C6 transfer-rule soundness, from the pre-publication red-team
+audit round (two independent audits converged on the same root cause:
+`param()`/`sanitize()` were modeled as context-free, durable value
+launderers). A wrapper is now a property of the sink call site, not of a
+value: it neutralizes taint only as the whole argument of a sink whose kind
+it matches.
+
+### Changed: finding-set changes (C6 now fires where it wrongly stayed silent)
+
+- Wrapper in a larger expression: a `param()`/`sanitize()` term inside a
+  concatenation no longer clears the wrapped variable; the taint reaches the
+  sink and C6 fires (e.g. `query "..." + param(q)`).
+- Wrapper via assignment: `y = param(x)` no longer produces a durable clean
+  variable; `y` takes `x`'s taint, so a later `query y` is a C6.
+- Mismatched wrapper (wrong context): a wrapper whose kind does not fit the
+  sink no longer clears taint and earns a wrong-context C6. The affinity is
+  `param -> query`/`exec` (parameter binding) and `sanitize -> render`
+  (context escaping); it is documented in the README and defined in
+  `checks.WRAPPER_AFFINITY`.
+
+### Changed: parser
+
+- E3: an assignment target that is a reserved statement keyword
+  (`receive`/`send`/`verify`/`authenticate`/`timeout`/`query`/`exec`/
+  `render`) is now a loud parse error. Previously `exec=cmd` (no space)
+  silently parsed as an assignment to a variable named `exec`, dropping the
+  sink.
+
+### Unchanged (documented soundness argument)
+
+- E2: `authenticate` is deliberately not given a C3-style fail-closed check.
+  A failed authenticate that continues carries "not authenticated", so every
+  reachable danger is already reported path-sensitively (C5 for trusted
+  entry, C4 for secret disclosure, C6 for tainted sinks); a fallback needing
+  no authentication is legitimate. Reasoning in `check_c3` and the README.
+
+### Docs
+
+- README C6 row, worked example, and laundering section rewritten to the
+  whole-argument + matching-kind semantics, with the affinity table. The
+  "not because a pattern stopped matching" line is replaced (it was false
+  under the old assignment/concatenation laundering). `Param`/`Sanitize`
+  docstrings name the specific sink kind each is safe for.
+
 ## 0.3.1 - 2026-07-14
 
 Unpublished. Test-only; no finding-set change on any previously valid spec.

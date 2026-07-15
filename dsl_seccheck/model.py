@@ -27,13 +27,19 @@ class Lit:
 
 @dataclass(frozen=True)
 class Param:
-    """``param(x)``: the value is passed parameterized (safe for sinks)."""
+    """``param(x)``: parameter binding. Neutralizes taint only as the whole
+    argument of a ``query`` or ``exec`` sink (see WRAPPER_AFFINITY); it does
+    not clear taint inside a larger expression, via assignment, or at a
+    ``render`` sink."""
     name: str
 
 
 @dataclass(frozen=True)
 class Sanitize:
-    """``sanitize(x)``: the value is sanitized (safe for sinks)."""
+    """``sanitize(x)``: context escaping. Neutralizes taint only as the whole
+    argument of a ``render`` sink (see WRAPPER_AFFINITY); it does not clear
+    taint inside a larger expression, via assignment, or at a ``query`` /
+    ``exec`` sink."""
     name: str
 
 
