@@ -76,6 +76,14 @@ _ASSIGN_RE = re.compile(rf"^({_NAME})\s*=\s*(.+)$")
 _WRAP_RE = re.compile(rf"(param|sanitize)\(\s*({_NAME})\s*\)")
 _IDENT_RE = re.compile(_NAME)
 
+# Statement keywords may not be used as an assignment target. Without this,
+# `exec=cmd` (no space) parses as an assignment to a variable named `exec`
+# and the exec sink is silently dropped.
+_RESERVED_LHS = frozenset({
+    "receive", "send", "verify", "authenticate", "timeout",
+    "query", "exec", "render",
+})
+
 
 def _strip_comment(raw: str) -> str:
     """Remove a trailing ``#`` comment, string-aware: a ``#`` inside a
@@ -149,7 +157,15 @@ def _parse_action(body: str, line: int) -> Action:
     if m := _SEND_RE.match(body):
         return Send(parse_expr(m.group(1), line), line)
     if m := _ASSIGN_RE.match(body):
-        return Assign(m.group(1), parse_expr(m.group(2), line), line)
+        target = m.group(1)
+        if target in _RESERVED_LHS:
+            raise ParseError(
+                f"cannot assign to reserved word {target!r}; if you meant the "
+                f"'{target}' statement, put a space after it (e.g. "
+                f"'{target} ...')",
+                line,
+            )
+        return Assign(target, parse_expr(m.group(2), line), line)
     raise ParseError(f"unrecognized action: {body!r}", line)
 
 

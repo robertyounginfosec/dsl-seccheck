@@ -16,6 +16,30 @@ def test_expr_errors() -> None:
         parse_expr("a b", 1)  # missing '+'
 
 
+@pytest.mark.parametrize("body", ["exec=cmd", "exec= cmd", "query=x", "timeout=T"])
+def test_reserved_word_assignment_target_is_a_loud_error(body: str) -> None:
+    # E3: `exec=cmd` (no space) must not silently parse as an assignment to a
+    # variable named `exec` and drop the sink; it is a loud parse error.
+    with pytest.raises(ParseError, match="reserved word"):
+        parse(f"state Init:\n    {body}\n")
+
+
+def test_sink_statement_with_space_still_parses() -> None:
+    # The reservation must not break the real statement form.
+    spec = parse(
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    timeout -> Abort\n"
+        "    verify q fail -> Deny\n"
+        "    exec param(q)\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+    assert spec.states["Init"].actions[3].__class__.__name__ == "Sink"
+
+
 def test_hash_inside_string_is_not_a_comment() -> None:
     spec = parse(
         'state Init:\n'
