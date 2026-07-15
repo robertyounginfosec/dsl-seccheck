@@ -55,7 +55,8 @@ def warn_all(spec: Spec) -> list[Finding]:
     six security properties; the CLI treats these as warnings unless
     --strict is passed.
     """
-    warnings = warn_w1(spec) + warn_w2(spec) + warn_w4(spec)
+    warnings = (warn_w1(spec) + warn_w2(spec) + warn_w3(spec)
+                + warn_w4(spec) + warn_w5(spec))
     return sorted(set(warnings), key=lambda f: (f.line, f.check, f.message))
 
 
@@ -72,6 +73,36 @@ def warn_w1(spec: Spec) -> list[Finding]:
                 f"line {live[-1].line}",
             ))
     return out
+
+
+# --- W3 / W5: terminality shape -------------------------------------------------
+# The two are converses and are kept as separate IDs for a precise message:
+# W3 is a state that stops but is not marked terminal; W5 is a state marked
+# terminal that does not stop. `deny`/`abort` imply `terminal` (parser), so
+# the terminal test is membership of the `terminal` flag.
+
+def warn_w3(spec: Spec) -> list[Finding]:
+    """A state with no live outgoing edges halts there; if it is not marked
+    terminal/deny/abort that is almost certainly an unintended dead-end."""
+    return [
+        Finding("W3", st.name, st.line,
+                f"state '{st.name}' has no outgoing transition but is not "
+                "marked terminal/deny/abort")
+        for st in spec.states.values()
+        if not edge_targets(st) and "terminal" not in st.flags
+    ]
+
+
+def warn_w5(spec: Spec) -> list[Finding]:
+    """A terminal state that still has a live outgoing transition contradicts
+    its own flag."""
+    return [
+        Finding("W5", st.name, st.line,
+                f"state '{st.name}' is marked terminal but has an outgoing "
+                "transition")
+        for st in spec.states.values()
+        if edge_targets(st) and "terminal" in st.flags
+    ]
 
 
 # --- W4: timeout that guards no receive ----------------------------------------
@@ -157,7 +188,7 @@ def check_c3(spec: Spec) -> list[Finding]:
                 out.append(Finding(
                     "C3", st.name, a.line,
                     f"verify '{a.var}' has no failure transition: failure "
-                    "would silently continue",
+                    "would halt in place, not fail closed",
                 ))
             elif not spec.states[a.fail_target].fail_closed:
                 out.append(Finding(
@@ -165,6 +196,15 @@ def check_c3(spec: Spec) -> list[Finding]:
                     f"verify '{a.var}' failure transition leads to "
                     f"'{a.fail_target}', which is not a terminal deny/abort "
                     "state",
+                ))
+            elif edge_targets(spec.states[a.fail_target]):
+                # flagged deny/abort but has live outgoing edges, so control
+                # escapes it: not actually terminal
+                out.append(Finding(
+                    "C3", st.name, a.line,
+                    f"verify '{a.var}' failure transition leads to "
+                    f"'{a.fail_target}', a deny/abort state that is not "
+                    "terminal (it has outgoing transitions)",
                 ))
     return out
 

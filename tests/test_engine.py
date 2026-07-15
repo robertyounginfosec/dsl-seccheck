@@ -175,7 +175,8 @@ def test_dead_code_is_invisible_to_both_engine_and_warnings() -> None:
     spec = parse(text)
     assert {f.check for f in check_all(spec)} == set()
     warns = {(f.check, f.state) for f in warn_all(spec)}
-    assert warns == {("W1", "Init"), ("W2", "Ghost")}
+    # Ghost is also a bodyless non-terminal dead-end (W3).
+    assert warns == {("W1", "Init"), ("W2", "Ghost"), ("W3", "Ghost")}
 
 
 def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
@@ -191,8 +192,9 @@ def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
     )
     spec = parse(text)
     assert {f.check for f in check_all(spec)} == set()
-    warns = warn_all(spec)
-    assert {(f.check, f.state) for f in warns} == {("W1", "Init"), ("W2", "Orphan")}
+    warns = {(f.check, f.state) for f in warn_all(spec)}
+    # Orphan is unreachable (W2) and also a bodyless dead-end (W3).
+    assert warns == {("W1", "Init"), ("W2", "Orphan"), ("W3", "Orphan")}
 
 
 def test_timeout_excludes_the_bindings_of_the_receive_it_guards() -> None:
@@ -277,6 +279,68 @@ def test_dead_timeout_after_flow_end_does_not_guard_receive() -> None:
         "state Abort: abort\n"
     )
     assert "C1" in checks_of(text)
+
+
+def test_c3_rejects_fail_target_with_live_outgoing_edges() -> None:
+    # The fail target is flagged deny but escapes via a goto, so it is not
+    # actually terminal: C3 must reject it.
+    text = (
+        "state Init:\n"
+        "    receive m(x)\n"
+        "    timeout -> Abort\n"
+        "    verify x ok -> Done fail -> Leaky\n"
+        "state Leaky: deny\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    assert "C3" in checks_of(text)
+
+
+def test_c3_accepts_truly_terminal_deny_target() -> None:
+    text = (
+        "state Init:\n"
+        "    receive m(x)\n"
+        "    timeout -> Abort\n"
+        "    verify x ok -> Done fail -> Deny\n"
+        "state Deny: deny\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    assert "C3" not in checks_of(text)
+
+
+def test_w3_flags_non_terminal_dead_end() -> None:
+    text = (
+        "state Init:\n"
+        "    send x\n"
+        "state Done: terminal\n"
+    )
+    warns = {(f.check, f.state) for f in warn_all(parse(text))}
+    assert ("W3", "Init") in warns
+
+
+def test_w3_absent_when_dead_end_is_flagged_terminal() -> None:
+    text = (
+        "state Init:\n"
+        "    -> Stop\n"
+        "state Stop: terminal\n"
+        "    send x\n"
+    )
+    # Stop has a body but no outgoing edge and IS terminal -> no W3.
+    warns = {(f.check, f.state) for f in warn_all(parse(text))}
+    assert not any(c == "W3" for c, _ in warns)
+
+
+def test_w5_flags_terminal_state_with_outgoing_edge() -> None:
+    text = (
+        "state Init:\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "    -> Init\n"
+    )
+    warns = {(f.check, f.state) for f in warn_all(parse(text))}
+    assert ("W5", "Done") in warns
 
 
 def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:
