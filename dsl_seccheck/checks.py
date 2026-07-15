@@ -38,18 +38,21 @@ SINK_LABEL = {
     "render": "cross-site scripting",
 }
 
+# Wrapper-to-sink affinity (load-bearing C6 semantics; documented in README):
+# param() binds a parameter, which neutralizes SQL (query) and OS command
+# (exec) injection; sanitize() escapes for a markup context (render). A
+# wrapper only clears taint at a sink whose kind is in its affinity set, and
+# only as the whole sink argument.
+WRAPPER_AFFINITY = {
+    "param": ("query", "exec"),
+    "sanitize": ("render",),
+}
 
-def _c6_exposed(expr: Expr) -> set[str]:
-    """Variable names whose taint reaches a sink fed *expr*.
 
-    A param()/sanitize() wrapper neutralizes its variable ONLY when it is
-    the entire sink argument; used as one term among several it exposes the
-    underlying name exactly as a bare variable would. (FN-1, in a later
-    change, further requires the wrapper's kind to match the sink.)
-    """
-    if len(expr) == 1 and isinstance(expr[0], (Param, Sanitize)):
-        return set()
-    return set(var_names(expr))
+def _wrappers_for(sink_kind: str) -> str:
+    return " or ".join(
+        f"{w}()" for w, kinds in WRAPPER_AFFINITY.items() if sink_kind in kinds
+    )
 
 
 def check_all(spec: Spec, budget: int = DEFAULT_BUDGET) -> list[Finding]:
@@ -398,13 +401,33 @@ class TaintDomain:
         return fact - {a.target}
 
     def on_sink(self, a: Sink, fact, st: State, out: list[Finding]):
-        for name in _c6_exposed(a.expr) & fact:
-            out.append(Finding(
-                "C6", st.name, a.line,
-                f"tainted value '{name}' reaches {a.kind} sink "
-                f"({SINK_LABEL[a.kind]}): a matching wrapper as the whole "
-                "sink argument is required to neutralize it",
-            ))
+        expr = a.expr
+        # A wrapper neutralizes ONLY as the whole sink argument AND with a
+        # kind matching the sink (param -> query/exec, sanitize -> render).
+        if len(expr) == 1 and isinstance(expr[0], (Param, Sanitize)):
+            term = expr[0]
+            wk = "param" if isinstance(term, Param) else "sanitize"
+            if a.kind in WRAPPER_AFFINITY[wk]:
+                return fact  # correctly neutralized
+            if term.name in fact:
+                out.append(Finding(
+                    "C6", st.name, a.line,
+                    f"tainted value '{term.name}' reaches {a.kind} sink via "
+                    f"{wk}(), which does not neutralize a {a.kind} sink "
+                    f"({SINK_LABEL[a.kind]}); use {_wrappers_for(a.kind)} as "
+                    "the whole argument",
+                ))
+            return fact
+        # bare variable, or a wrapper used inside a larger expression: every
+        # underlying name is exposed
+        for name in var_names(expr):
+            if name in fact:
+                out.append(Finding(
+                    "C6", st.name, a.line,
+                    f"tainted value '{name}' reaches {a.kind} sink "
+                    f"({SINK_LABEL[a.kind]}): a matching wrapper as the whole "
+                    "sink argument is required to neutralize it",
+                ))
         return fact
 
     def on_verify_ok(self, a: Verify, fact):

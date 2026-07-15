@@ -34,7 +34,7 @@ line where it fails.
 | C3 | fail-closed verification | every `verify` has an explicit failure transition, and it lands in a terminal `deny`/`abort` state |
 | C4 | no-secret-before-auth | fields declared `secret` are never sent, and never reach a sink, on a path without a successful `authenticate`; `param()`/`sanitize()` do not clear secrecy (they address injection, not disclosure) |
 | C5 | auth-before-trusted-state | states marked `trusted` are unreachable on any path lacking a successful `authenticate` |
-| C6 | injection taint-tracking | values originating from `receive` never reach `query` (SQLi), `exec` (command injection), or `render` (XSS) sinks, unless passed via `param(...)` or cleared via `sanitize(...)`; taint propagates through assignment and concatenation |
+| C6 | injection taint-tracking | values originating from `receive` never reach `query` (SQLi), `exec` (command injection), or `render` (XSS) sinks unless neutralized by a wrapper that is the **whole** sink argument **and** matches the sink kind (`param()` for `query`/`exec`, `sanitize()` for `render`); taint propagates through assignment and concatenation, and a wrapper used inside a larger expression, assigned to a variable, or at a sink of the wrong kind does **not** clear it |
 
 C1 and C3 are structural. C2, C4, C5, and C6 are path-sensitive and share
 one worklist engine, each carrying its own fact: a boolean for
@@ -63,9 +63,12 @@ $ dsl-seccheck examples/c6_fail.dsl
 examples/c6_fail.dsl:7: C6 [state Init]: tainted value 'sql' reaches query sink (SQL injection): pass it via param() or clear it via sanitize()
 ```
 
-Replace the concatenation with `query param(q)` and the finding disappears,
-because the property now holds on every path, not because a pattern
-stopped matching.
+Replace the whole argument with `query param(q)` and the finding
+disappears, because `param()` as the entire argument of a `query` sink is a
+genuine parameter binding. The wrapper only neutralizes in that exact form:
+`query param(q) + "x"` (wrapper inside a concatenation), `y = param(q)`
+followed by `query y` (wrapper assigned to a variable), and `render
+param(q)` (wrapper at a sink of the wrong kind) are all still flagged.
 
 ### Example: a trusted state reachable without authentication (C5)
 
@@ -162,12 +165,21 @@ EXPR := term (+ term)*   where term := VAR | "literal" | param(VAR) | sanitize(V
 `initial`, or the first declared. A `verify`/`authenticate` without an `ok`
 target falls through on success.
 
-Taint and secrecy treat the wrappers differently, on purpose. An assignment
-whose right-hand side is only wrapped or literal terms (for example
-`y = param(x)` or `y = sanitize(x)`) produces a **clean** variable under C6,
-because the value is injection-safe at that point. Secrecy is not laundered
-the same way: `param()`/`sanitize()` never clear a secret under C4, since
-parameterizing or escaping a secret still discloses it.
+A `param()`/`sanitize()` wrapper is a property of the **sink call site**,
+not a durable property of a value. Under C6 it neutralizes taint only when
+it is the entire sink argument and its kind matches the sink:
+
+| wrapper | neutralizes at sink kind | rationale |
+|---|---|---|
+| `param(x)` | `query`, `exec` | parameter binding defuses SQL and OS-command injection |
+| `sanitize(x)` | `render` | context escaping defuses markup injection |
+
+Anywhere else the wrapped variable is exposed exactly as if it were bare:
+inside a concatenation (`query "..." + param(x)`), as an assignment
+right-hand side (`y = param(x)` does **not** make `y` clean), or at a sink
+of a non-matching kind (`render param(x)`, `query sanitize(x)`). Secrecy
+(C4) is never laundered at all: `param()`/`sanitize()` never clear a secret,
+since parameterizing or escaping a secret still discloses it.
 
 ## Scope, honestly
 

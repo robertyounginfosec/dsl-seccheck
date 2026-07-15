@@ -56,11 +56,20 @@ from dsl_seccheck.model import (
 
 # Independently reasoned C6 exposure rule (not imported from checks): a
 # param()/sanitize() wrapper cancels its variable only when it stands alone
-# as the sink argument. In any compound expression the wrapped name is
-# exposed like a bare one. (The kind-affinity refinement is added with FN-1.)
-def _oracle_exposed(expr) -> set:
+# as the sink argument AND its kind fits the sink - a parameter binding
+# defuses SQL/OS-command sinks, an escaper defuses a markup sink. In any
+# compound expression, or at a sink of the wrong kind, the wrapped name is
+# exposed like a bare one.
+_ORACLE_AFFINITY = {"param": {"query", "exec"}, "sanitize": {"render"}}
+
+
+def _oracle_exposed(expr, sink_kind) -> set:
     if len(expr) == 1 and isinstance(expr[0], (Param, Sanitize)):
-        return set()
+        term = expr[0]
+        wk = "param" if isinstance(term, Param) else "sanitize"
+        if sink_kind in _ORACLE_AFFINITY[wk]:
+            return set()
+        return {term.name}
     return set(var_names(expr))
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
@@ -166,7 +175,7 @@ def oracle_findings(spec) -> set[tuple[str, str, int]]:
             elif isinstance(a, Sink):
                 record_uses(a.expr, a.line)
                 record_disclosure(a.expr, a.line)
-                for n in _oracle_exposed(a.expr):
+                for n in _oracle_exposed(a.expr, a.kind):
                     if n in taint:
                         found.add(("C6", st.name, a.line))
             elif isinstance(a, Timeout):
@@ -270,6 +279,10 @@ EXPECTED_FIXTURE_FINDINGS = {
     "fn2_wrapper_in_concatenation.dsl": [("C6", "Init")],
     # FN-2: a wrapper assigned to a variable is not durably clean
     "fn2_wrapper_assigned_not_durable.dsl": [("C6", "Init")],
+    # FN-1: sanitize() does not neutralize a query sink (wrong context)
+    "fn1_mismatched_sanitize_at_query.dsl": [("C6", "Init")],
+    # FN-1: param() DOES neutralize an exec sink (matching affinity) - clean
+    "fn1_param_at_exec_is_clean.dsl": [],
 }
 
 

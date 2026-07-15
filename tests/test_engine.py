@@ -76,6 +76,36 @@ def test_lone_wrapper_still_neutralizes() -> None:
     assert checks_of(text) == set()
 
 
+def _wrapped_sink_spec(wrapper: str, sink: str) -> str:
+    return (
+        "state Init:\n"
+        "    receive m(q)\n"
+        "    timeout -> Abort\n"
+        "    verify q fail -> Deny\n"
+        f"    {sink} {wrapper}(q)\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+
+
+@pytest.mark.parametrize("wrapper,sink", [
+    ("param", "query"), ("param", "exec"), ("sanitize", "render"),
+])
+def test_matching_wrapper_neutralizes(wrapper: str, sink: str) -> None:
+    # FN-1 affinity: param -> query/exec, sanitize -> render.
+    assert checks_of(_wrapped_sink_spec(wrapper, sink)) == set()
+
+
+@pytest.mark.parametrize("wrapper,sink", [
+    ("sanitize", "query"), ("sanitize", "exec"), ("param", "render"),
+])
+def test_mismatched_wrapper_does_not_neutralize(wrapper: str, sink: str) -> None:
+    # FN-1: a wrapper whose kind does not fit the sink leaves taint exposed.
+    assert checks_of(_wrapped_sink_spec(wrapper, sink)) == {"C6"}
+
+
 def test_c5_fires_when_any_path_is_unauthenticated() -> None:
     # Two routes into Session: one authenticated, one not. The property is
     # per-path, so the unauthenticated route must still be reported.
