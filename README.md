@@ -131,10 +131,14 @@ pytest
 
 The test suite asserts that every example produces exactly its expected
 result, plus targeted semantics tests (taint through aliasing, timeout
-edges carrying position facts, dead code invisible to engine and warnings
-alike, unreachable states staying quiet) and a differential check: an
-independent brute-force path enumerator must agree with the engine on
-every example spec.
+exactness in both directions, dead code invisible to engine and warnings
+alike, unreachable states staying quiet) and two differential checks: a
+brute-force path enumerator must agree with the engine on every example
+spec, and a structural micro-oracle must agree with C1/C3. The oracles are
+independent in exploration strategy and in the intra-state flow-end logic
+they reimplement; the per-action transfer-rule definitions are shared with
+the engine by derivation, so the differential check validates the engine's
+exploration, not the transfer rules themselves.
 
 ## DSL reference
 
