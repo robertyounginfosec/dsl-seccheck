@@ -9,6 +9,30 @@ bumps the MINOR version. Changes that cannot alter any spec's findings
 version. Anyone gating CI on this tool's exit codes should pin to a minor
 version.
 
+## 0.3.1 - 2026-07-14
+
+Unpublished. Test-only; no finding-set change on any previously valid spec.
+
+### Added
+
+- Differential coverage extended to timeout-fact-bearing fixtures
+  (`tests/fixtures/differential/`). Both differential checks (the
+  path-sensitive brute-force oracle and the structural micro-oracle) now
+  run over the example corpus PLUS these fixtures, and each fixture's
+  expected findings are pinned against `check_all`. This closes the
+  disclosed blind spot in 0.3.0: every example spec times out into an
+  empty `Abort` state, so the timeout-edge fact was invisible to the
+  differential oracle; the new fixtures time out into states that use the
+  carried variables (a cleared secret still disclosed, a first receive's
+  binding present while the guarded receive's is absent, an authenticate
+  surviving onto the edge).
+
+### Documentation
+
+- `check_c3` docstring notes it deliberately walks all actions, including
+  dead ones (a dead verify is still a textual fail-closed defect; W1
+  reports the deadness; over-reporting is the safe direction).
+
 ## 0.3.0 - 2026-07-14
 
 Unpublished soundness-closure release. Resolves the 0.2.0 known limitation

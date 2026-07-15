@@ -35,6 +35,7 @@ from dsl_seccheck.checks import (
     AuthDomain,
     TaintDomain,
     VerifiedDomain,
+    check_all,
     check_c1,
     check_c3,
 )
@@ -52,6 +53,12 @@ from dsl_seccheck.model import (
 )
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "differential"
+# Differential coverage runs over the example corpus PLUS timeout-fact-bearing
+# fixtures whose timeout targets actually use the carried variables (the
+# examples all time out into an empty Abort, so the timeout fact is invisible
+# there - this is the blind spot 0.3.1 closes).
+ALL_SPECS = sorted(EXAMPLES.glob("*.dsl")) + sorted(FIXTURES.glob("*.dsl"))
 VISIT_CAP = 10_000
 DEPTH_CAP = 60
 
@@ -185,9 +192,7 @@ def engine_findings(spec) -> set[tuple[str, str, int]]:
     return found
 
 
-@pytest.mark.parametrize(
-    "path", sorted(EXAMPLES.glob("*.dsl")), ids=lambda p: p.name
-)
+@pytest.mark.parametrize("path", ALL_SPECS, ids=lambda p: p.name)
 def test_engine_matches_brute_force_oracle(path: Path) -> None:
     spec = parse(path.read_text(encoding="utf-8"))
     assert engine_findings(spec) == oracle_findings(spec)
@@ -232,13 +237,31 @@ def _real(findings) -> set[tuple[str, str, int]]:
     return {(f.check, f.state, f.line) for f in findings}
 
 
-@pytest.mark.parametrize(
-    "path", sorted(EXAMPLES.glob("*.dsl")), ids=lambda p: p.name
-)
+@pytest.mark.parametrize("path", ALL_SPECS, ids=lambda p: p.name)
 def test_structural_checks_match_micro_oracle(path: Path) -> None:
     spec = parse(path.read_text(encoding="utf-8"))
     assert _real(check_c1(spec)) == micro_c1(spec)
     assert _real(check_c3(spec)) == micro_c3(spec)
+
+
+# Expected findings pin the timeout-fact semantics directly (not just oracle
+# agreement). Each fixture's timeout target uses the carried variables.
+EXPECTED_FIXTURE_FINDINGS = {
+    # (a) token still secret on the timeout edge -> C4 at the send
+    "timeout_a_single_receive_clears_secret.dsl": [("C4", "Leak")],
+    # (b) first receive's p present (C6), second receive's q absent (clean):
+    #     exactly one finding
+    "timeout_b_multi_receive_first_present_second_absent.dsl": [("C6", "Both")],
+    # (c) authed survives onto the edge -> trusted entry is fine, no findings
+    "timeout_c_auth_survives_onto_edge.dsl": [],
+}
+
+
+@pytest.mark.parametrize("name,expected", sorted(EXPECTED_FIXTURE_FINDINGS.items()))
+def test_timeout_fixtures_pin_semantics(name: str, expected) -> None:
+    spec = parse((FIXTURES / name).read_text(encoding="utf-8"))
+    got = sorted((f.check, f.state) for f in check_all(spec))
+    assert got == expected
 
 
 # Adversarial structural specs the example corpus does not cover: the C1

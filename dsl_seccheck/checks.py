@@ -179,6 +179,10 @@ def _c1_finding(st: State, a: Receive) -> Finding:
 # --- C3: fail-closed verification (structural) --------------------------------
 
 def check_c3(spec: Spec) -> list[Finding]:
+    """Unlike check_c1, this walks all of st.actions (not just the live
+    prefix): a dead verify is still a textual fail-closed defect worth
+    reporting, W1 separately flags that it is unreachable, and reporting a
+    dead verify is the safe over-reporting direction."""
     out: list[Finding] = []
     for st in spec.states.values():
         for a in st.actions:
