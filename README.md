@@ -29,10 +29,10 @@ line where it fails.
 
 | ID | Name | Property |
 |----|------|----------|
-| C1 | timeout-completeness | every state that can block on a `receive` declares a `timeout` transition |
+| C1 | timeout-completeness | every blocking `receive` is guarded by a `timeout` transition following it (each receive is its own blocking point) |
 | C2 | verify-exhaustiveness | every received field passes a `verify` step before it is used |
 | C3 | fail-closed verification | every `verify` has an explicit failure transition, and it lands in a terminal `deny`/`abort` state |
-| C4 | no-secret-before-auth | fields declared `secret` are never sent on a path without a successful `authenticate` |
+| C4 | no-secret-before-auth | fields declared `secret` are never sent, and never reach a sink, on a path without a successful `authenticate`; `param()`/`sanitize()` do not clear secrecy (they address injection, not disclosure) |
 | C5 | auth-before-trusted-state | states marked `trusted` are unreachable on any path lacking a successful `authenticate` |
 | C6 | injection taint-tracking | values originating from `receive` never reach `query` (SQLi), `exec` (command injection), or `render` (XSS) sinks, unless passed via `param(...)` or cleared via `sanitize(...)`; taint propagates through assignment and concatenation |
 
@@ -84,8 +84,9 @@ pip install -e .
 dsl-seccheck path/to/spec.dsl        # or: python -m dsl_seccheck spec.dsl
 ```
 
-Exit codes: `0` clean, `1` findings, `2` parse error. Findings report the
-check ID, the state and line, and a one-line explanation.
+Exit codes: `0` clean, `1` findings, `2` parse or read error. A bad file
+does not stop the remaining files; the highest code wins. Findings report
+the check ID, the state and line, and a one-line explanation.
 
 The `examples/` directory contains a passing and a failing spec for each of
 the six checks; they double as the acceptance suite.
@@ -109,7 +110,8 @@ state NAME: [initial] [trusted] [terminal] [deny] [abort]
     receive msg(field1, field2)     # bind fields; taints them (C6), marks unverified (C2)
     verify VAR [ok -> STATE] [fail -> STATE]
     authenticate [ok -> STATE] [fail -> STATE]
-    timeout -> STATE                # may fire while blocked on receive
+    timeout -> STATE                # guards the receive(s) before it; the
+                                    # edge carries facts as of its position
     send EXPR
     VAR = EXPR                      # taint/secrecy propagate through + concatenation
     query EXPR | exec EXPR | render EXPR

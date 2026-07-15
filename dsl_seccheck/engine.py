@@ -10,8 +10,11 @@ property verified here holds on every reachable path.
 Control-flow semantics inside a state body:
 
 - Actions run in declaration order.
-- ``timeout`` edges carry the *state-entry* fact: a timeout can fire while
-  the state is still blocked on its receive, before later actions run.
+- ``timeout`` edges carry the fact at the timeout's own position: every
+  action textually before it has already been applied. Receive bindings
+  are included even though a firing timeout means the receive never
+  completed; domains only ever *add* facts on receive (taint, unverified
+  fields), so the edge over-approximates and never hides a violation.
 - ``verify``/``authenticate`` with an explicit ok target end the linear
   flow (both outcomes jump); with no ok target the success branch falls
   through to the next action.
@@ -87,7 +90,7 @@ def run(spec: Spec, domain: Domain) -> list[Finding]:
             elif isinstance(a, Sink):
                 fact = domain.on_sink(a, fact, st, findings)
             elif isinstance(a, Timeout):
-                edge(a.target, entry)
+                edge(a.target, fact)
             elif isinstance(a, Verify):
                 if a.fail_target:
                     edge(a.fail_target, domain.on_verify_fail(a, fact))

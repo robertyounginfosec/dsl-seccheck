@@ -1,6 +1,7 @@
 """Command-line interface.
 
-Exit codes: 0 = all specs clean, 1 = findings reported, 2 = parse error.
+Exit codes: 0 = all specs clean, 1 = findings reported, 2 = parse or read
+error. A bad file does not stop the remaining files; the highest code wins.
 """
 from __future__ import annotations
 
@@ -29,16 +30,18 @@ def main(argv: list[str] | None = None) -> int:
             spec = parse(path.read_text(encoding="utf-8"))
         except OSError as e:
             print(f"{path}: cannot read: {e}", file=sys.stderr)
-            return 2
+            exit_code = 2
+            continue
         except ParseError as e:
             print(f"{path}:{e.line}: parse error: {e.msg}", file=sys.stderr)
-            return 2
+            exit_code = 2
+            continue
 
         findings = check_all(spec)
         for f in findings:
             print(f"{path}:{f.line}: {f.check} [state {f.state}]: {f.message}")
         if findings:
-            exit_code = 1
+            exit_code = max(exit_code, 1)
         else:
             print(f"{path}: OK ({len(spec.states)} states, no findings)")
     return exit_code

@@ -53,3 +53,14 @@ def test_cli_parse_error(tmp_path, capsys) -> None:
     bad.write_text("state A:\n    fly -> Moon\n", encoding="utf-8")
     assert main([str(bad)]) == 2
     assert "parse error" in capsys.readouterr().err
+
+
+def test_cli_continues_past_parse_error(tmp_path, capsys) -> None:
+    from dsl_seccheck.cli import main
+
+    bad = tmp_path / "bad.dsl"
+    bad.write_text("not a state line\n", encoding="utf-8")
+    assert main([str(bad), str(EXAMPLES / "c1_pass.dsl")]) == 2
+    captured = capsys.readouterr()
+    assert "parse error" in captured.err
+    assert "OK" in captured.out  # the good file was still checked

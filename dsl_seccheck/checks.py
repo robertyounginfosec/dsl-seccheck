@@ -49,18 +49,31 @@ def check_all(spec: Spec) -> list[Finding]:
 # --- C1: timeout-completeness (structural) -----------------------------------
 
 def check_c1(spec: Spec) -> list[Finding]:
+    """Each receive is its own blocking point, so each must be guarded by
+    a timeout transition appearing after it and before the next receive;
+    a single state-level timeout cannot escape an earlier block it is
+    never reached from."""
     out: list[Finding] = []
     for st in spec.states.values():
-        receives = [a for a in st.actions if isinstance(a, Receive)]
-        has_timeout = any(isinstance(a, Timeout) for a in st.actions)
-        if receives and not has_timeout:
-            a = receives[0]
-            out.append(Finding(
-                "C1", st.name, a.line,
-                f"state '{st.name}' blocks on receive '{a.msg}' but declares "
-                "no timeout transition",
-            ))
+        unguarded: Receive | None = None
+        for a in st.actions:
+            if isinstance(a, Receive):
+                if unguarded is not None:
+                    out.append(_c1_finding(st, unguarded))
+                unguarded = a
+            elif isinstance(a, Timeout):
+                unguarded = None
+        if unguarded is not None:
+            out.append(_c1_finding(st, unguarded))
     return out
+
+
+def _c1_finding(st: State, a: Receive) -> Finding:
+    return Finding(
+        "C1", st.name, a.line,
+        f"state '{st.name}' blocks on receive '{a.msg}' with no timeout "
+        "transition guarding it",
+    )
 
 
 # --- C3: fail-closed verification (structural) --------------------------------
@@ -112,9 +125,11 @@ class AuthDomain:
             ))
 
     def on_receive(self, a: Receive, fact, st: State, out) -> tuple:
-        authed, secrets = fact
-        # a received field overwrites any same-named secret-carrying var
-        return (authed, secrets - set(a.fields))
+        # A received field re-binding a secret-named variable keeps the
+        # secret label. Over-approximating here keeps timeout edges sound
+        # (a firing timeout means the receive never completed, so the
+        # variable may still hold the secret).
+        return fact
 
     def on_send(self, a: Send, fact, st: State, out: list[Finding]) -> tuple:
         authed, secrets = fact
@@ -134,7 +149,18 @@ class AuthDomain:
             return (authed, secrets | {a.target})
         return (authed, secrets - {a.target})
 
-    def on_sink(self, a: Sink, fact, st: State, out) -> tuple:
+    def on_sink(self, a: Sink, fact, st: State, out: list[Finding]) -> tuple:
+        # writing a secret into a query/exec/render sink discloses it just
+        # as a send does, so C4 covers sinks with the same auth gate
+        authed, secrets = fact
+        if not authed:
+            for name in var_names(a.expr):
+                if name in secrets:
+                    out.append(Finding(
+                        "C4", st.name, a.line,
+                        f"secret '{name}' reaches {a.kind} sink on a path "
+                        "with no prior successful authenticate step",
+                    ))
         return fact
 
     def on_verify_ok(self, a: Verify, fact):

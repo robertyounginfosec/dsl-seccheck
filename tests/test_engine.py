@@ -55,10 +55,11 @@ def test_c5_fires_when_any_path_is_unauthenticated() -> None:
     assert "C5" in checks_of(text)
 
 
-def test_timeout_edge_carries_state_entry_fact() -> None:
-    # The timeout can fire while Init is still blocked on its receive,
-    # before authenticate runs, so Session is reachable unauthenticated
-    # even though the linear body authenticates before the goto.
+def test_timeout_edge_carries_fact_at_its_position() -> None:
+    # The timeout fires while Init is still blocked on its receive, before
+    # the authenticate below it runs, so Session is reachable
+    # unauthenticated even though the linear body authenticates before
+    # the goto.
     text = (
         "state Init:\n"
         "    receive m(x)\n"
@@ -69,6 +70,57 @@ def test_timeout_edge_carries_state_entry_fact() -> None:
         "state Deny: deny\n"
     )
     assert "C5" in checks_of(text)
+
+
+def test_timeout_path_keeps_taint_acquired_earlier_in_the_body() -> None:
+    # x is tainted before the second blocking point; the timeout edge to
+    # Leak must carry that taint (entry-fact semantics would drop it and
+    # miss the exec violation).
+    text = (
+        "state Init:\n"
+        "    receive first(p)\n"
+        "    timeout -> Abort\n"
+        "    verify p fail -> Deny\n"
+        "    x = p\n"
+        "    receive second(y)\n"
+        "    timeout -> Leak\n"
+        "    -> Done\n"
+        "state Leak:\n"
+        "    exec x\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Deny: deny\n"
+        "state Abort: abort\n"
+    )
+    assert checks_of(text) == {"C6"}
+
+
+def test_each_receive_needs_its_own_timeout_guard() -> None:
+    # One timeout guards the first receive; the second blocking point has
+    # no escape and must be reported by C1.
+    text = (
+        "state Init:\n"
+        "    receive a(x)\n"
+        "    timeout -> Abort\n"
+        "    receive b(y)\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    assert checks_of(text) == {"C1"}
+
+
+def test_secret_reaching_sink_pre_auth_is_flagged() -> None:
+    # Disclosure via a sink is as bad as a send; param() makes a value
+    # injection-safe, not disclosure-safe.
+    text = (
+        "secret token\n"
+        "state Init:\n"
+        "    query param(token)\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+    )
+    assert checks_of(text) == {"C4"}
 
 
 def test_secret_aliasing_is_tracked() -> None:
