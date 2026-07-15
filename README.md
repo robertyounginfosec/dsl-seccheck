@@ -46,6 +46,14 @@ proceeds under the success assumption. That is sound only because C3
 unconditionally reports every such verify first, so the checker never
 silently analyzes around a failure path it cannot see.
 
+C3 covers `verify` but deliberately not `authenticate`. A failed
+`authenticate` that continues to a non-terminal state is not treated as a
+fail-open defect, because the failure edge carries "not authenticated": any
+trusted state reached that way is caught by C5, any secret disclosed by C4,
+and any tainted sink by C6, all on that exact path. A fallback that requires
+no authentication (a guest path, a retry) is legitimate, so there is nothing
+to report. This is a soundness argument, not a gap.
+
 ### Example: catching an injection (C6)
 
 ```

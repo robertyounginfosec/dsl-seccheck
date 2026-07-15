@@ -408,6 +408,47 @@ def test_w5_flags_terminal_state_with_outgoing_edge() -> None:
     assert ("W5", "Done") in warns
 
 
+def test_authenticate_fail_open_dangers_are_covered_by_c4_c5() -> None:
+    # E2 resolution: an authenticate whose failure continues to a
+    # non-terminal state is not given a C3-style check, because every
+    # reachable danger is already caught path-sensitively - the fail edge
+    # carries authed=False.
+    trusted_fallback = (
+        "state Init:\n"
+        "    authenticate fail -> Guest\n"
+        "state Guest: trusted\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+    )
+    assert "C5" in checks_of(trusted_fallback)  # trusted entry caught
+
+    secret_fallback = (
+        "secret k\n"
+        "state Init:\n"
+        "    authenticate fail -> Guest\n"
+        "state Guest:\n"
+        "    send k\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+    )
+    assert "C4" in checks_of(secret_fallback)  # secret disclosure caught
+
+
+def test_authenticate_fail_open_to_benign_fallback_is_not_flagged() -> None:
+    # The converse: a fallback that does nothing requiring auth is a
+    # legitimate unauthenticated path. Extending C3 to authenticate would
+    # wrongly flag this; C4/C5 correctly stay silent.
+    text = (
+        "state Init:\n"
+        "    authenticate fail -> Guest\n"
+        "state Guest:\n"
+        '    render "welcome"\n'
+        "    -> Done\n"
+        "state Done: terminal\n"
+    )
+    assert checks_of(text) == set()
+
+
 def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:
     spec = parse("state A:\n    -> B\nstate B: terminal\n")
     with pytest.raises(AnalysisBudgetExceeded):

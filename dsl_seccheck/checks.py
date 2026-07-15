@@ -199,7 +199,18 @@ def check_c3(spec: Spec) -> list[Finding]:
     """Unlike check_c1, this walks all of st.actions (not just the live
     prefix): a dead verify is still a textual fail-closed defect worth
     reporting, W1 separately flags that it is unreachable, and reporting a
-    dead verify is the safe over-reporting direction."""
+    dead verify is the safe over-reporting direction.
+
+    C3 covers `verify` only, deliberately NOT `authenticate`. A failed
+    authenticate that continues to a non-terminal state is not a fail-open
+    hole here, because the fail edge carries authed=False (on_auth_fail):
+    any downstream trusted-state entry is reported by C5, any secret
+    disclosure by C4, and any tainted sink by C6 - all path-sensitively,
+    regardless of how the state was reached. Extending C3 to authenticate
+    would instead flag legitimate unauthenticated fallbacks (guest paths,
+    retry loops) that reach nothing requiring authentication. So this is a
+    soundness argument, not a missing check.
+    """
     out: list[Finding] = []
     for st in spec.states.values():
         for a in st.actions:
