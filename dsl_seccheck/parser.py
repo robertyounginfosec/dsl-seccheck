@@ -20,6 +20,9 @@ Grammar (one construct per line; ``#`` starts a comment):
 
 ``deny`` and ``abort`` imply ``terminal``. The initial state is the one
 flagged ``initial``, or the first declared state if none is flagged.
+
+A ``#`` starts a comment except inside a double-quoted string literal, so
+``render "a#b"`` keeps the ``#`` in the literal.
 """
 from __future__ import annotations
 
@@ -72,6 +75,19 @@ _SEND_RE = re.compile(r"^send\s+(.+)$")
 _ASSIGN_RE = re.compile(rf"^({_NAME})\s*=\s*(.+)$")
 _WRAP_RE = re.compile(rf"(param|sanitize)\(\s*({_NAME})\s*\)")
 _IDENT_RE = re.compile(_NAME)
+
+
+def _strip_comment(raw: str) -> str:
+    """Remove a trailing ``#`` comment, string-aware: a ``#`` inside a
+    double-quoted literal is preserved. (A naive split on ``#`` would cut
+    ``send "a#b"`` mid-literal and mis-report an unterminated string.)"""
+    in_str = False
+    for i, ch in enumerate(raw):
+        if ch == '"':
+            in_str = not in_str
+        elif ch == "#" and not in_str:
+            return raw[:i].rstrip()
+    return raw.rstrip()
 
 
 def parse_expr(text: str, line: int) -> Expr:
@@ -144,7 +160,7 @@ def parse(text: str) -> Spec:
     initial_flagged: list[str] = []
 
     for lineno, raw in enumerate(text.splitlines(), start=1):
-        line = raw.split("#", 1)[0].rstrip()
+        line = _strip_comment(raw)
         if not line.strip():
             continue
         indented = line[0].isspace()

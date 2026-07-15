@@ -158,6 +158,13 @@ EXPR := term (+ term)*   where term := VAR | "literal" | param(VAR) | sanitize(V
 `initial`, or the first declared. A `verify`/`authenticate` without an `ok`
 target falls through on success.
 
+Taint and secrecy treat the wrappers differently, on purpose. An assignment
+whose right-hand side is only wrapped or literal terms (for example
+`y = param(x)` or `y = sanitize(x)`) produces a **clean** variable under C6,
+because the value is injection-safe at that point. Secrecy is not laundered
+the same way: `param()`/`sanitize()` never clear a secret under C4, since
+parameterizing or escaping a secret still discloses it.
+
 ## Scope, honestly
 
 This covers the structurally-preventable slice of protocol security:

@@ -16,6 +16,17 @@ def test_expr_errors() -> None:
         parse_expr("a b", 1)  # missing '+'
 
 
+def test_hash_inside_string_is_not_a_comment() -> None:
+    spec = parse(
+        'state Init:\n'
+        '    render "a#b"   # real trailing comment\n'
+        '    -> Done\n'
+        'state Done: terminal\n'
+    )
+    sink = spec.states["Init"].actions[0]
+    assert sink.expr == (Lit("a#b"),)
+
+
 def test_state_flags_and_initial() -> None:
     spec = parse(
         "state A:\n"
