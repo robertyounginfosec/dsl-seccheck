@@ -57,11 +57,11 @@ def test_c5_fires_when_any_path_is_unauthenticated() -> None:
     assert "C5" in checks_of(text)
 
 
-def test_timeout_edge_carries_fact_at_its_position() -> None:
-    # The timeout fires while Init is still blocked on its receive, before
-    # the authenticate below it runs, so Session is reachable
-    # unauthenticated even though the linear body authenticates before
-    # the goto.
+def test_timeout_before_authenticate_reaches_state_unauthenticated() -> None:
+    # The timeout guards receive m; when it fires, the authenticate below
+    # never ran, so Session is reached unauthenticated. Under the exact
+    # semantics the timeout carries the fact from before m (authed=False),
+    # so C5 fires.
     text = (
         "state Init:\n"
         "    receive m(x)\n"
@@ -195,27 +195,72 @@ def test_dead_actions_and_orphan_states_warn_but_do_not_fail() -> None:
     assert {(f.check, f.state) for f in warns} == {("W1", "Init"), ("W2", "Orphan")}
 
 
-def test_timeout_taint_over_approximation_is_intended_over_reporting() -> None:
-    # KNOWN FALSE POSITIVE, kept by design. When the timeout fires, Init
-    # was still blocked at its receive, so q was never actually bound;
-    # the C6 on the timeout path over-reports. The timeout edge carries
-    # every fact as of its position (receive bindings included) because a
-    # security checker must over-report rather than under-report. If this
-    # test starts finding nothing, a "fix" has reintroduced the
-    # false-negative window that position-fact edges closed.
+def test_timeout_excludes_the_bindings_of_the_receive_it_guards() -> None:
+    # Exactness, direction (a). The ONLY path into UseQ is Init's timeout,
+    # which guards receive m. When it fires, m never bound q, so q is not
+    # tainted on that edge: `query q` in UseQ is clean, no C6. (Position-
+    # fact semantics wrongly reported this as the over-approximation FP.)
     text = (
         "state Init:\n"
         "    receive m(q)\n"
-        "    verify q fail -> Deny\n"
         "    timeout -> UseQ\n"
         "    -> Done\n"
         "state UseQ:\n"
-        "    exec q\n"
+        "    query q\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+    )
+    assert checks_of(text) == set()
+
+
+def test_timeout_reports_taint_a_later_clear_never_reached() -> None:
+    # Exactness, direction (b) - the FN the exact semantics closes. x is
+    # tainted before the second receive, then cleared AFTER it. A fired
+    # timeout on the second receive means that clear never ran, so the
+    # timeout edge to Leak must still carry x tainted -> C6 reported.
+    # (Position-fact semantics reflected the clear and missed this.)
+    text = (
+        "state Init:\n"
+        "    receive first(p)\n"
+        "    timeout -> Abort\n"
+        "    verify p fail -> Deny\n"
+        "    x = p\n"
+        "    receive second(y)\n"
+        "    x = sanitize(x)\n"
+        "    timeout -> Leak\n"
+        "    -> Done\n"
+        "state Leak:\n"
+        "    query x\n"
         "    -> Done\n"
         "state Done: terminal\n"
         "state Deny: deny\n"
+        "state Abort: abort\n"
     )
     assert checks_of(text) == {"C6"}
+
+
+def test_timeout_guarding_a_receive_is_not_w4() -> None:
+    text = (
+        "state Init:\n"
+        "    receive m(x)\n"
+        "    timeout -> Abort\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    assert warn_all(parse(text)) == []
+
+
+def test_timeout_without_preceding_receive_is_w4() -> None:
+    text = (
+        "state Init:\n"
+        "    timeout -> Abort\n"
+        "    -> Done\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    warns = {(f.check, f.state) for f in warn_all(parse(text))}
+    assert warns == {("W4", "Init")}
 
 
 def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:

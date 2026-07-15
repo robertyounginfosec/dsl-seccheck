@@ -55,7 +55,7 @@ def warn_all(spec: Spec) -> list[Finding]:
     six security properties; the CLI treats these as warnings unless
     --strict is passed.
     """
-    warnings = warn_w1(spec) + warn_w2(spec)
+    warnings = warn_w1(spec) + warn_w2(spec) + warn_w4(spec)
     return sorted(set(warnings), key=lambda f: (f.line, f.check, f.message))
 
 
@@ -71,6 +71,27 @@ def warn_w1(spec: Spec) -> list[Finding]:
                 f"action can never execute: the linear flow ends at "
                 f"line {live[-1].line}",
             ))
+    return out
+
+
+# --- W4: timeout that guards no receive ----------------------------------------
+
+def warn_w4(spec: Spec) -> list[Finding]:
+    """A timeout with no preceding receive in the live body guards nothing;
+    its edge degenerates to the position fact. Almost always a spec
+    mistake (a stray timeout, or a receive that was removed)."""
+    out: list[Finding] = []
+    for st in spec.states.values():
+        seen_receive = False
+        for a in live_actions(st):
+            if isinstance(a, Receive):
+                seen_receive = True
+            elif isinstance(a, Timeout) and not seen_receive:
+                out.append(Finding(
+                    "W4", st.name, a.line,
+                    f"timeout in state '{st.name}' guards no receive "
+                    "(no preceding receive in the state body)",
+                ))
     return out
 
 
@@ -171,10 +192,12 @@ class AuthDomain:
             ))
 
     def on_receive(self, a: Receive, fact, st: State, out) -> tuple:
-        # A received field re-binding a secret-named variable keeps the
-        # secret label. Over-approximating here keeps timeout edges sound
-        # (a firing timeout means the receive never completed, so the
-        # variable may still hold the secret).
+        # A received field that shadows a secret-named variable keeps the
+        # secret label: the over-report (a completed receive would clear
+        # it) is the safe direction for a disclosure check, and it matches
+        # the oracle, which likewise never clears secrets on receive.
+        # (Timeout soundness no longer depends on this: timeout edges now
+        # carry the fact from before the receive.)
         return fact
 
     def on_send(self, a: Send, fact, st: State, out: list[Finding]) -> tuple:

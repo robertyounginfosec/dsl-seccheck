@@ -136,8 +136,9 @@ state NAME: [initial] [trusted] [terminal] [deny] [abort]
     receive msg(field1, field2)     # bind fields; taints them (C6), marks unverified (C2)
     verify VAR [ok -> STATE] [fail -> STATE]
     authenticate [ok -> STATE] [fail -> STATE]
-    timeout -> STATE                # guards the receive(s) before it; the
-                                    # edge carries facts as of its position
+    timeout -> STATE                # guards the nearest preceding receive; its
+                                    # edge carries facts as of that receive
+                                    # blocking (that receive's bindings excluded)
     send EXPR
     VAR = EXPR                      # taint/secrecy propagate through + concatenation
     query EXPR | exec EXPR | render EXPR

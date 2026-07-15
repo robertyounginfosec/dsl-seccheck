@@ -10,20 +10,19 @@ property verified here holds on every reachable path.
 Control-flow semantics inside a state body:
 
 - Actions run in declaration order.
-- ``timeout`` edges carry the fact at the timeout's own position: every
-  action textually before it has already been applied. Receive bindings
-  are included even though a firing timeout means the receive never
-  completed; domains only ever *add* facts on receive (taint, unverified
-  fields), so that inclusion over-approximates and cannot hide a
-  violation (a characterization test marks the resulting over-reporting
-  as intended). Known limitation, flagged for a future round: an action
-  between the receive and its timeout that *removes* a fact (e.g. an
-  assignment clearing a variable's taint) is also reflected on the edge,
-  although a fired timeout means it never ran; the exact semantics would
-  carry the fact as of the blocking receive itself.
+- ``timeout`` edges associate with the nearest preceding ``receive`` in
+  the body and carry the exact fact as of that receive blocking: entry
+  facts plus every action before that receive, with the receive's own
+  bindings and everything after it excluded (a fired timeout means the
+  receive never completed, so neither its binding nor any later action
+  ran). Earlier receives on the path did complete, so their bindings and
+  subsequent assigns are included. A ``timeout`` with no preceding
+  receive carries the fact at its own position (degenerate; no bindings
+  are involved) and is separately flagged W4.
 - ``verify``/``authenticate`` with an explicit ok target end the linear
-  flow (both outcomes jump); with no ok target the success branch falls
-  through to the next action.
+  flow (success jumps to the ok target; failure jumps to the fail target
+  or, absent one, halts in place). With no ok target the success branch
+  falls through to the next action.
 - ``->`` (goto) ends the body.
 """
 from __future__ import annotations
@@ -108,8 +107,14 @@ def run(spec: Spec, domain: Domain, budget: int = DEFAULT_BUDGET) -> list[Findin
         # control flow: it stops at the flow-ending action, so no break
         # logic is duplicated here.
         fact = entry
+        # fact as it stood just before the nearest preceding receive
+        # blocked; None until the first receive is seen. A timeout carries
+        # this, not the position fact, because a fired timeout means that
+        # receive (and everything after it) never ran.
+        fact_before_receive = None
         for a in live_actions(st):
             if isinstance(a, Receive):
+                fact_before_receive = fact
                 fact = domain.on_receive(a, fact, st, findings)
             elif isinstance(a, Send):
                 fact = domain.on_send(a, fact, st, findings)
@@ -118,7 +123,10 @@ def run(spec: Spec, domain: Domain, budget: int = DEFAULT_BUDGET) -> list[Findin
             elif isinstance(a, Sink):
                 fact = domain.on_sink(a, fact, st, findings)
             elif isinstance(a, Timeout):
-                edge(a.target, fact)
+                # degenerate case (no preceding receive) uses the position
+                # fact and is reported by warn_w4
+                edge(a.target,
+                     fact if fact_before_receive is None else fact_before_receive)
             elif isinstance(a, Verify):
                 if a.fail_target:
                     edge(a.fail_target, domain.on_verify_fail(a, fact))
