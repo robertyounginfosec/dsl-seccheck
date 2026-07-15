@@ -263,6 +263,22 @@ def test_timeout_without_preceding_receive_is_w4() -> None:
     assert warns == {("W4", "Init")}
 
 
+def test_dead_timeout_after_flow_end_does_not_guard_receive() -> None:
+    # Suppression direction for the C1 live-actions fix. The receive is
+    # followed by a goto (flow ends), then a dead `timeout -> Abort`.
+    # That dead timeout must NOT clear C1 for the receive before it;
+    # walking st.actions instead of live_actions would hide the finding.
+    text = (
+        "state Init:\n"
+        "    receive m(x)\n"
+        "    -> Done\n"
+        "    timeout -> Abort\n"
+        "state Done: terminal\n"
+        "state Abort: abort\n"
+    )
+    assert "C1" in checks_of(text)
+
+
 def test_analysis_budget_fails_loudly_instead_of_approximating() -> None:
     spec = parse("state A:\n    -> B\nstate B: terminal\n")
     with pytest.raises(AnalysisBudgetExceeded):

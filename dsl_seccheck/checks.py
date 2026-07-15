@@ -123,7 +123,9 @@ def check_c1(spec: Spec) -> list[Finding]:
     out: list[Finding] = []
     for st in spec.states.values():
         unguarded: Receive | None = None
-        for a in st.actions:
+        # walk live_actions, not st.actions: a timeout sitting past the
+        # flow end can never execute, so it guards nothing
+        for a in live_actions(st):
             if isinstance(a, Receive):
                 if unguarded is not None:
                     out.append(_c1_finding(st, unguarded))
