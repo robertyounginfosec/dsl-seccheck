@@ -79,8 +79,11 @@ class Assign:
 @dataclass(frozen=True)
 class Verify:
     """Validate *var*. ``ok_target`` None means fall through on success;
-    ``fail_target`` None means the spec silently continues on failure
-    (which check C3 reports)."""
+    ``fail_target`` None means failure halts the machine in place (as with
+    Authenticate) rather than continuing. C3 reports a missing fail target
+    because fail-closed design requires an explicit deny/abort transition;
+    C3 is load-bearing for the path-sensitive checks, which model no
+    failure edge when one is absent."""
     var: str
     ok_target: str | None
     fail_target: str | None
@@ -155,7 +158,10 @@ class Spec:
 
 def flow_ends_at(a: Action) -> bool:
     """True if *a* ends a state's linear flow: an unconditional goto, or a
-    verify/authenticate whose both outcomes jump."""
+    verify/authenticate whose success jumps (an explicit ok target). On
+    failure such a step either jumps to its fail target or halts in place;
+    either way control does not fall through to the next action, so nothing
+    after it is live."""
     if isinstance(a, Goto):
         return True
     return isinstance(a, (Verify, Authenticate)) and a.ok_target is not None

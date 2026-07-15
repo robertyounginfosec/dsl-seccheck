@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="dsl-seccheck",
         description="Deterministic static security checker for protocol DSL "
-                    "specs (checks C1-C6, warnings W1-W2).",
+                    "specs (checks C1-C6, structural warnings W1-W5).",
     )
     ap.add_argument("specs", nargs="+", metavar="SPEC.dsl",
                     help="one or more .dsl spec files")

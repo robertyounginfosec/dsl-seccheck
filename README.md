@@ -100,12 +100,20 @@ the six checks; they double as the acceptance suite.
 
 ## Warnings and the analysis budget
 
-Beyond the six checks, two structural warnings flag suspect spec shape:
-`W1`, an action that can never execute (the linear flow already ended at a
-goto or a both-target verify/authenticate), and `W2`, a state unreachable
-from the initial state. Warnings print like findings but do not affect the
-exit code unless `--strict` is passed: "passes the checker" keeps meaning
-the six security properties.
+Beyond the six checks, structural warnings flag suspect spec shape: `W1`,
+an action that can never execute (the linear flow already ended at a goto,
+or at a verify/authenticate whose success jumps away); `W2`, a state
+unreachable from the initial state; `W3`, a state with no outgoing
+transition that is not marked terminal; `W4`, a timeout that guards no
+receive; and `W5`, a terminal state that still has an outgoing transition.
+Warnings print like findings but do not affect the exit code unless
+`--strict` is passed: "passes the checker" keeps meaning the six security
+properties.
+
+A `verify` or `authenticate` with no failure transition halts in place on
+failure; it does not continue. C3 still reports a missing failure
+transition, because fail-closed design requires an explicit deny/abort
+edge.
 
 The path-sensitive checks explore the finite (state, fact) space
 exhaustively, which is exponential in the worst case. Rather than silently
