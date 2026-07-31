@@ -9,6 +9,15 @@ bumps the MINOR version. Changes that cannot alter any spec's findings
 version. Anyone gating CI on this tool's exit codes should pin to a minor
 version.
 
+## 0.4.1 - 2026-07-21
+
+Docs only; no finding-set change.
+
+- README wording pass: the "Scope, honestly" heading is now "Scope", and
+  several self-narrating phrases were tightened out of the prose. One
+  docstring sentence in checks.py trimmed the same way. No semantic
+  content changed.
+
 ## 0.4.0 - 2026-07-14
 
 Unpublished. C6 transfer-rule soundness, from the pre-publication red-team

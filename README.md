@@ -19,11 +19,11 @@ worklist reachability analysis over the protocol's finite state graph, so
 the result is deterministic and complete over the spec: no sampling, no
 heuristics, no model calls.
 
-That determinism is the point. In an AI-assisted development workflow,
-generated code and specs need a trust boundary that does not share the
-generator's failure modes. A checker like this one is that boundary for the
-properties it covers: the spec either proves the property or names the
-line where it fails.
+In an AI-assisted development workflow, generated code and specs need a
+deterministic trust boundary that does not share the generator's failure
+modes. A checker like this one is that boundary for the properties it
+covers: the spec either proves the property or names the line where it
+fails.
 
 ## The six checks
 
@@ -40,9 +40,9 @@ C1 and C3 are structural. C2, C4, C5, and C6 are path-sensitive and share
 one worklist engine, each carrying its own fact: a boolean for
 authentication, a set of variable names for taint and verification.
 
-One coupling is worth knowing: a `verify` with no failure transition
-leaves its failure path unmodeled by the engine, and downstream analysis
-proceeds under the success assumption. That is sound only because C3
+A `verify` with no failure transition leaves its failure path unmodeled
+by the engine, and downstream analysis proceeds under the success
+assumption. That is sound only because C3
 unconditionally reports every such verify first, so the checker never
 silently analyzes around a failure path it cannot see.
 
@@ -52,7 +52,7 @@ fail-open defect, because the failure edge carries "not authenticated": any
 trusted state reached that way is caught by C5, any secret disclosed by C4,
 and any tainted sink by C6, all on that exact path. A fallback that requires
 no authentication (a guest path, a retry) is legitimate, so there is nothing
-to report. This is a soundness argument, not a gap.
+to report.
 
 ### Example: catching an injection (C6)
 
@@ -73,7 +73,7 @@ examples/c6_fail.dsl:7: C6 [state Init]: tainted value 'sql' reaches query sink 
 
 Replace the whole argument with `query param(q)` and the finding
 disappears, because `param()` as the entire argument of a `query` sink is a
-genuine parameter binding. The wrapper only neutralizes in that exact form:
+parameter binding. The wrapper only neutralizes in that exact form:
 `query param(q) + "x"` (wrapper inside a concatenation), `y = param(q)`
 followed by `query y` (wrapper assigned to a variable), and `render
 param(q)` (wrapper at a sink of the wrong kind) are all still flagged.
@@ -189,7 +189,7 @@ of a non-matching kind (`render param(x)`, `query sanitize(x)`). Secrecy
 (C4) is never laundered at all: `param()`/`sanitize()` never clear a secret,
 since parameterizing or escaping a secret still discloses it.
 
-## Scope, honestly
+## Scope
 
 This covers the structurally-preventable slice of protocol security:
 injection reaching typed sinks, authentication ordering, fail-closed

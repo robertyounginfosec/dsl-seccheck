@@ -208,8 +208,7 @@ def check_c3(spec: Spec) -> list[Finding]:
     disclosure by C4, and any tainted sink by C6 - all path-sensitively,
     regardless of how the state was reached. Extending C3 to authenticate
     would instead flag legitimate unauthenticated fallbacks (guest paths,
-    retry loops) that reach nothing requiring authentication. So this is a
-    soundness argument, not a missing check.
+    retry loops) that reach nothing requiring authentication.
     """
     out: list[Finding] = []
     for st in spec.states.values():
